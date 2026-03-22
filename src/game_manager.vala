@@ -5,29 +5,22 @@ using Gtk;
 using Adw;
 using Gee;
 
-/**
- * Get full path to reg.exe
- */
-private static string get_reg_exe () {
+private static string get_sys_exe (string name) {
     string? sysroot = Environment.get_variable ("SystemRoot");
-    if (sysroot == null)
-        sysroot = "C:\\Windows";
-    return Path.build_filename (sysroot, "System32", "reg.exe");
+    if (sysroot == null) sysroot = "C:\\Windows";
+    return Path.build_filename (sysroot, "System32", name);
 }
 
 private static bool run_reg (string[] args) {
     string[] real_args = args.copy ();
-    real_args[0] = get_reg_exe ();
-
+    real_args[0] = get_sys_exe ("reg.exe");
     try {
         int exit_status;
-        string std_out;
-        string std_err;
+        string std_out, std_err;
         Process.spawn_sync (null, real_args, null, (SpawnFlags) 0, null,
             out std_out, out std_err, out exit_status);
         return (exit_status == 0);
     } catch (Error e) {
-        stderr.printf ("reg command failed: %s\n", e.message);
         return false;
     }
 }
@@ -35,28 +28,20 @@ private static bool run_reg (string[] args) {
 private static string? find_layer_json () {
     string exe_dir = Environment.get_current_dir ();
     string? appdir = Environment.get_variable ("APPDIR");
-    if (appdir != null && appdir != "")
-        exe_dir = appdir;
-
-    string json_path = Path.build_filename (exe_dir, "MangoHud.x86_64.json");
-    if (FileUtils.test (json_path, FileTest.EXISTS))
-        return json_path;
-    json_path = Path.build_filename (exe_dir, "MangoHud.json");
-    if (FileUtils.test (json_path, FileTest.EXISTS))
-        return json_path;
+    if (appdir != null && appdir != "") exe_dir = appdir;
+    string p = Path.build_filename (exe_dir, "MangoHud.x86_64.json");
+    if (FileUtils.test (p, FileTest.EXISTS)) return p;
+    p = Path.build_filename (exe_dir, "MangoHud.json");
+    if (FileUtils.test (p, FileTest.EXISTS)) return p;
     return null;
 }
 
 public static bool register_vulkan_layer () {
-    string? json_path = find_layer_json ();
-    if (json_path == null) return false;
-    string reg_path = json_path.replace ("/", "\\");
-
-    bool ok = run_reg ({ "reg", "add",
-        "HKLM\\SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers",
-        "/v", reg_path, "/t", "REG_DWORD", "/d", "0", "/f" });
-    if (!ok) return false;
-
+    string? json = find_layer_json ();
+    if (json == null) return false;
+    string rp = json.replace ("/", "\\");
+    if (!run_reg ({ "reg", "add", "HKLM\\SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers",
+        "/v", rp, "/t", "REG_DWORD", "/d", "0", "/f" })) return false;
     run_reg ({ "reg", "add",
         "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
         "/v", "MANGOHUD", "/t", "REG_SZ", "/d", "1", "/f" });
@@ -66,32 +51,25 @@ public static bool register_vulkan_layer () {
 public static bool is_vulkan_layer_registered () {
     try {
         int exit_status;
-        string std_out;
-        string std_err;
+        string std_out, std_err;
         Process.spawn_sync (null,
-            { get_reg_exe (), "query", "HKLM\\SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers" },
+            { get_sys_exe ("reg.exe"), "query", "HKLM\\SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers" },
             null, (SpawnFlags) 0, null, out std_out, out std_err, out exit_status);
         return (exit_status == 0 && std_out.contains ("MangoHud"));
-    } catch (Error e) {
-        return false;
-    }
+    } catch (Error e) { return false; }
 }
 
 public class GameManager : Box {
     private ListBox process_list_box;
     private Button start_btn;
     private Button stop_btn;
-    private Button refresh_btn;
     private Label status_label;
-    private Pid? overlay_pid = null;
     private string? current_target = null;
 
     public GameManager () {
         Object (orientation: Orientation.VERTICAL, spacing: 8);
-        set_margin_start (12);
-        set_margin_end (12);
-        set_margin_top (12);
-        set_margin_bottom (12);
+        set_margin_start (12); set_margin_end (12);
+        set_margin_top (12); set_margin_bottom (12);
         setup_ui ();
         refresh_processes ();
         sync_overlay_state ();
@@ -99,43 +77,36 @@ public class GameManager : Box {
 
     private string get_exe_directory () {
         string? appdir = Environment.get_variable ("APPDIR");
-        if (appdir != null && appdir != "")
-            return appdir;
+        if (appdir != null && appdir != "") return appdir;
         return Environment.get_current_dir ();
     }
 
-    /* ---- UI ---- */
-
     private void setup_ui () {
-        // Header
         var header = new Label (_("Overlay"));
         header.add_css_class ("title-2");
         header.set_halign (Align.START);
         append (header);
 
-        var desc = new Label (_("Select a running game process and start the overlay. MangoHud will track the game window automatically."));
+        var desc = new Label (_("Select a running game and start the overlay. It tracks the game window automatically."));
         desc.add_css_class ("dim-label");
         desc.set_halign (Align.START);
         desc.set_wrap (true);
         append (desc);
 
-        // Process list
         var scrolled = new ScrolledWindow ();
         scrolled.vexpand = true;
         scrolled.min_content_height = 250;
-
         process_list_box = new ListBox ();
         process_list_box.set_selection_mode (SelectionMode.SINGLE);
         process_list_box.add_css_class ("boxed-list");
         scrolled.child = process_list_box;
         append (scrolled);
 
-        // Buttons
         var btn_box = new Box (Orientation.HORIZONTAL, 8);
         btn_box.set_halign (Align.CENTER);
         btn_box.set_margin_top (8);
 
-        refresh_btn = new Button.with_label (_("Refresh"));
+        var refresh_btn = new Button.with_label (_("Refresh"));
         refresh_btn.add_css_class ("flat");
         refresh_btn.clicked.connect (refresh_processes);
         btn_box.append (refresh_btn);
@@ -154,45 +125,36 @@ public class GameManager : Box {
 
         append (btn_box);
 
-        // Status
         status_label = new Label (_("No overlay running."));
         status_label.add_css_class ("dim-label");
         status_label.set_margin_top (4);
         append (status_label);
 
-        // Vulkan layer section
+        // Vulkan section
         var sep = new Separator (Orientation.HORIZONTAL);
         sep.set_margin_top (12);
         append (sep);
 
-        var vk_header = new Label (_("Vulkan Games"));
-        vk_header.add_css_class ("title-4");
-        vk_header.set_halign (Align.START);
-        vk_header.set_margin_top (6);
-        append (vk_header);
+        var vk_h = new Label (_("Vulkan Games"));
+        vk_h.add_css_class ("title-4");
+        vk_h.set_halign (Align.START);
+        vk_h.set_margin_top (6);
+        append (vk_h);
 
-        var vk_desc = new Label (_("Register the Vulkan layer for games like CS2, Doom, etc. Requires admin. The overlay still needs to be started above."));
-        vk_desc.add_css_class ("dim-label");
-        vk_desc.set_halign (Align.START);
-        vk_desc.set_wrap (true);
-        append (vk_desc);
+        var vk_d = new Label (_("Register the Vulkan layer for CS2, Doom, etc. Requires admin."));
+        vk_d.add_css_class ("dim-label");
+        vk_d.set_halign (Align.START);
+        vk_d.set_wrap (true);
+        append (vk_d);
 
-        var vk_status = new Label ("");
+        var vk_status = new Label (is_vulkan_layer_registered () ? _("Registered") : _("Not registered"));
         vk_status.set_halign (Align.START);
         vk_status.set_margin_top (4);
+        if (is_vulkan_layer_registered ()) vk_status.add_css_class ("success");
+        else vk_status.add_css_class ("warning");
 
-        var vk_btn = new Button.with_label (_("Register Vulkan Layer"));
+        var vk_btn = new Button.with_label (is_vulkan_layer_registered () ? _("Re-register") : _("Register Vulkan Layer"));
         vk_btn.set_margin_top (4);
-
-        if (is_vulkan_layer_registered ()) {
-            vk_status.label = _("Registered");
-            vk_status.add_css_class ("success");
-            vk_btn.label = _("Re-register");
-        } else {
-            vk_status.label = _("Not registered");
-            vk_status.add_css_class ("warning");
-        }
-
         vk_btn.clicked.connect (() => {
             vk_btn.sensitive = false;
             vk_status.label = _("Registering...");
@@ -213,129 +175,19 @@ public class GameManager : Box {
                 });
             });
         });
-
         append (vk_status);
         append (vk_btn);
     }
 
-    /* ---- Process enumeration ---- */
-
-    private void refresh_processes () {
-        // Clear
-        var child = process_list_box.get_first_child ();
-        while (child != null) {
-            var next = child.get_next_sibling ();
-            process_list_box.remove (child);
-            child = next;
-        }
-
-        // Get running processes via tasklist (simple, no extra deps)
-        try {
-            string tasklist = Path.build_filename (
-                Environment.get_variable ("SystemRoot") ?? "C:\\Windows",
-                "System32", "tasklist.exe"
-            );
-
-            int exit_status;
-            string std_out;
-            string std_err;
-            Process.spawn_sync (null,
-                { tasklist, "/FO", "CSV", "/NH" },
-                null, (SpawnFlags) 0, null,
-                out std_out, out std_err, out exit_status);
-
-            if (exit_status != 0) return;
-
-            // Known non-game processes to filter out
-            string[] skip = {
-                "System", "svchost.exe", "csrss.exe", "wininit.exe",
-                "services.exe", "lsass.exe", "smss.exe", "dwm.exe",
-                "explorer.exe", "SearchHost.exe", "RuntimeBroker.exe",
-                "ShellExperienceHost.exe", "sihost.exe", "taskhostw.exe",
-                "ctfmon.exe", "conhost.exe", "cmd.exe", "powershell.exe",
-                "WindowsTerminal.exe", "SecurityHealthSystray.exe",
-                "TextInputHost.exe", "SystemSettings.exe",
-                "ApplicationFrameHost.exe", "fontdrvhost.exe",
-                "WmiPrvSE.exe", "spoolsv.exe", "dllhost.exe",
-                "tasklist.exe", "mangojuice.exe", "MangoJuice.exe",
-                "MangoHud.exe", "Code.exe", "msedge.exe",
-                "chrome.exe", "firefox.exe", "Widgets.exe",
-                "StartMenuExperienceHost.exe",
-                "CompPkgSrv.exe", "audiodg.exe",
-                "NVDisplay.Container.exe", "nvcontainer.exe",
-                "NVIDIA Web Helper.exe",
-            };
-
-            var seen = new HashSet<string> ();
-            string[] lines = std_out.split ("\n");
-
-            foreach (string line in lines) {
-                string trimmed = line.strip ();
-                if (trimmed == "") continue;
-
-                // CSV: "name.exe","PID","Session Name","Session#","Mem Usage"
-                string[] parts = trimmed.split ("\",\"");
-                if (parts.length < 2) continue;
-
-                string name = parts[0].replace ("\"", "").strip ();
-                if (name == "" || name == "Image Name") continue;
-
-                // Skip known system processes
-                bool should_skip = false;
-                foreach (string s in skip) {
-                    if (name == s) { should_skip = true; break; }
-                }
-                if (should_skip) continue;
-
-                // Skip duplicates
-                if (seen.contains (name)) continue;
-                seen.add (name);
-
-                var row = new Adw.ActionRow ();
-                row.title = name;
-                process_list_box.append (row);
-            }
-        } catch (Error e) {
-            stderr.printf ("Failed to list processes: %s\n", e.message);
-        }
-    }
-
-    private string? get_selected_process () {
-        var row = process_list_box.get_selected_row ();
-        if (row == null) return null;
-
-        // Walk to find the ActionRow
-        var child = process_list_box.get_first_child ();
-        int idx = 0;
-        while (child != null) {
-            if (child == row) {
-                var action_row = child as Adw.ActionRow;
-                if (action_row != null) return action_row.title;
-            }
-            child = child.get_next_sibling ();
-        }
-        return null;
-    }
-
-    /* ---- Start / Stop ---- */
-
     private bool is_mangohud_running () {
         try {
-            string tasklist = Path.build_filename (
-                Environment.get_variable ("SystemRoot") ?? "C:\\Windows",
-                "System32", "tasklist.exe"
-            );
             int exit_status;
-            string std_out;
-            string std_err;
+            string std_out, std_err;
             Process.spawn_sync (null,
-                { tasklist, "/FI", "IMAGENAME eq MangoHud.exe", "/NH", "/FO", "CSV" },
-                null, (SpawnFlags) 0, null,
-                out std_out, out std_err, out exit_status);
+                { get_sys_exe ("tasklist.exe"), "/FI", "IMAGENAME eq MangoHud.exe", "/NH", "/FO", "CSV" },
+                null, (SpawnFlags) 0, null, out std_out, out std_err, out exit_status);
             return std_out.contains ("MangoHud.exe");
-        } catch (Error e) {
-            return false;
-        }
+        } catch (Error e) { return false; }
     }
 
     public void sync_overlay_state () {
@@ -357,99 +209,139 @@ public class GameManager : Box {
         }
     }
 
+    private void refresh_processes () {
+        var child = process_list_box.get_first_child ();
+        while (child != null) {
+            var next = child.get_next_sibling ();
+            process_list_box.remove (child);
+            child = next;
+        }
+
+        try {
+            int exit_status;
+            string std_out, std_err;
+            Process.spawn_sync (null,
+                { get_sys_exe ("tasklist.exe"), "/FO", "CSV", "/NH" },
+                null, (SpawnFlags) 0, null, out std_out, out std_err, out exit_status);
+            if (exit_status != 0) return;
+
+            string[] skip = {
+                "System", "svchost.exe", "csrss.exe", "wininit.exe",
+                "services.exe", "lsass.exe", "smss.exe", "dwm.exe",
+                "explorer.exe", "SearchHost.exe", "RuntimeBroker.exe",
+                "ShellExperienceHost.exe", "sihost.exe", "taskhostw.exe",
+                "ctfmon.exe", "conhost.exe", "cmd.exe", "powershell.exe",
+                "WindowsTerminal.exe", "SecurityHealthSystray.exe",
+                "TextInputHost.exe", "SystemSettings.exe",
+                "ApplicationFrameHost.exe", "fontdrvhost.exe",
+                "WmiPrvSE.exe", "spoolsv.exe", "dllhost.exe",
+                "tasklist.exe", "mangojuice.exe", "MangoJuice.exe",
+                "MangoHud.exe", "Code.exe", "msedge.exe",
+                "chrome.exe", "firefox.exe", "Widgets.exe",
+                "StartMenuExperienceHost.exe", "CompPkgSrv.exe",
+                "audiodg.exe", "NVDisplay.Container.exe",
+                "nvcontainer.exe", "SearchIndexer.exe",
+                "MsMpEng.exe", "wscript.exe", "reg.exe",
+            };
+
+            var seen = new HashSet<string> ();
+            foreach (string line in std_out.split ("\n")) {
+                string trimmed = line.strip ();
+                if (trimmed == "") continue;
+                string[] parts = trimmed.split ("\",\"");
+                if (parts.length < 2) continue;
+                string name = parts[0].replace ("\"", "").strip ();
+                if (name == "" || name == "Image Name") continue;
+
+                bool should_skip = false;
+                foreach (string s in skip) {
+                    if (name == s) { should_skip = true; break; }
+                }
+                if (should_skip || seen.contains (name)) continue;
+                seen.add (name);
+
+                var row = new Adw.ActionRow ();
+                row.title = name;
+                process_list_box.append (row);
+            }
+        } catch (Error e) {
+            stderr.printf ("Failed to list processes: %s\n", e.message);
+        }
+    }
+
+    private string? get_selected_process () {
+        var row = process_list_box.get_selected_row ();
+        if (row == null) return null;
+        var child = process_list_box.get_first_child ();
+        while (child != null) {
+            if (child == row) {
+                var ar = child as Adw.ActionRow;
+                if (ar != null) return ar.title;
+            }
+            child = child.get_next_sibling ();
+        }
+        return null;
+    }
+
     private void on_start () {
         string? proc = get_selected_process ();
         if (proc == null) {
-            show_error_dialog (_("No process selected"), _("Select a game from the list first."));
+            show_error (_("No process selected"), _("Select a game from the list first."));
             return;
         }
 
-        string mangohud_exe = Path.build_filename (get_exe_directory (), "MangoHud.exe");
-        if (!FileUtils.test (mangohud_exe, FileTest.EXISTS)) {
-            show_error_dialog (_("MangoHud.exe not found"), _("Expected at: %s").printf (mangohud_exe));
+        string mangohud = Path.build_filename (get_exe_directory (), "MangoHud.exe");
+        if (!FileUtils.test (mangohud, FileTest.EXISTS)) {
+            show_error (_("MangoHud.exe not found"), _("Expected at: %s").printf (mangohud));
             return;
         }
 
-        // Launch MangoHud.exe as admin via ShellExecuteEx (triggers UAC prompt)
-        // We use a helper .vbs script because GLib can't call ShellExecuteEx directly
+        // Launch elevated via VBScript ShellExecute runas
         try {
-            string vbs_path = Path.build_filename (
+            string vbs = Path.build_filename (
                 Environment.get_variable ("TEMP") ?? "C:\\Windows\\Temp",
-                "mangohud_launch.vbs"
-            );
-
-            string vbs_content = "Set objShell = CreateObject(\"Shell.Application\")\n" +
-                "objShell.ShellExecute \"%s\", \"%s\", \"\", \"runas\", 1\n".printf (
-                    mangohud_exe.replace ("\\", "\\\\"),
-                    proc
-                );
-
-            FileUtils.set_contents (vbs_path, vbs_content);
-
-            string wscript = Path.build_filename (
-                Environment.get_variable ("SystemRoot") ?? "C:\\Windows",
-                "System32", "wscript.exe"
-            );
-            Process.spawn_command_line_async (wscript + " \"" + vbs_path + "\"");
+                "mangohud_launch.vbs");
+            FileUtils.set_contents (vbs,
+                "Set s = CreateObject(\"Shell.Application\")\n" +
+                "s.ShellExecute \"%s\", \"%s\", \"\", \"runas\", 1\n".printf (
+                    mangohud.replace ("\\", "\\\\"), proc));
+            Process.spawn_sync (null,
+                { get_sys_exe ("wscript.exe"), vbs },
+                null, (SpawnFlags) 0, null, null, null, null);
 
             current_target = proc;
-
-            // Wait a moment then check if it started
-            Timeout.add (2000, () => {
-                sync_overlay_state ();
-                return false;
-            });
-
-            status_label.label = _("Starting overlay (accept UAC prompt)...");
-            status_label.remove_css_class ("dim-label");
+            status_label.label = _("Starting overlay (accept UAC)...");
             start_btn.sensitive = false;
+
+            Timeout.add (3000, () => { sync_overlay_state (); return false; });
         } catch (Error e) {
-            show_error_dialog (_("Failed to start overlay"), e.message);
+            show_error (_("Failed to start"), e.message);
         }
     }
 
     private void on_stop () {
-        // Kill MangoHud.exe - also needs elevation since MangoHud runs as admin
         try {
-            string vbs_path = Path.build_filename (
+            string vbs = Path.build_filename (
                 Environment.get_variable ("TEMP") ?? "C:\\Windows\\Temp",
-                "mangohud_stop.vbs"
-            );
+                "mangohud_stop.vbs");
+            FileUtils.set_contents (vbs,
+                "Set s = CreateObject(\"Shell.Application\")\n" +
+                "s.ShellExecute \"%s\", \"/IM MangoHud.exe /F\", \"\", \"runas\", 0\n".printf (
+                    get_sys_exe ("taskkill.exe").replace ("\\", "\\\\")));
+            Process.spawn_sync (null,
+                { get_sys_exe ("wscript.exe"), vbs },
+                null, (SpawnFlags) 0, null, null, null, null);
 
-            string taskkill = Path.build_filename (
-                Environment.get_variable ("SystemRoot") ?? "C:\\Windows",
-                "System32", "taskkill.exe"
-            );
-
-            string vbs_content = "Set objShell = CreateObject(\"Shell.Application\")\n" +
-                "objShell.ShellExecute \"%s\", \"/IM MangoHud.exe /F\", \"\", \"runas\", 0\n".printf (
-                    taskkill.replace ("\\", "\\\\")
-                );
-
-            FileUtils.set_contents (vbs_path, vbs_content);
-
-            string wscript = Path.build_filename (
-                Environment.get_variable ("SystemRoot") ?? "C:\\Windows",
-                "System32", "wscript.exe"
-            );
-            Process.spawn_command_line_async (wscript + " \"" + vbs_path + "\"");
-
-            Timeout.add (1000, () => {
-                sync_overlay_state ();
-                return false;
-            });
+            Timeout.add (1500, () => { sync_overlay_state (); return false; });
         } catch (Error e) {
-            stderr.printf ("Failed to stop overlay: %s\n", e.message);
+            stderr.printf ("Failed to stop: %s\n", e.message);
         }
     }
 
-    /* ---- Error dialog ---- */
-
-    private void show_error_dialog (string title, string message) {
+    private void show_error (string title, string message) {
         var dlg = new Adw.AlertDialog (title, message);
         dlg.add_response ("ok", _("OK"));
         dlg.set_default_response ("ok");
-        var root_window = this.get_root () as Gtk.Window;
-        dlg.present (root_window);
+        dlg.present (this.get_root () as Gtk.Window);
     }
 }
