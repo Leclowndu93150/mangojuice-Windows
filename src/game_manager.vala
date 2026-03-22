@@ -7,24 +7,40 @@ using Adw;
 using Gee;
 
 /**
- * Run a reg.exe command using proper argv (avoids GLib quote-parsing issues).
+ * Get full path to reg.exe
+ */
+private static string get_reg_exe () {
+    string? sysroot = Environment.get_variable ("SystemRoot");
+    if (sysroot == null)
+        sysroot = "C:\\Windows";
+    return Path.build_filename (sysroot, "System32", "reg.exe");
+}
+
+/**
+ * Run a reg.exe command using proper argv with full path.
  * Returns true on success.
  */
 private static bool run_reg (string[] args) {
+    // Replace "reg" with full path
+    string[] real_args = args.copy ();
+    real_args[0] = get_reg_exe ();
+
     try {
         int exit_status;
         string std_out;
         string std_err;
         Process.spawn_sync (
             null,           // working dir
-            args,
+            real_args,
             null,           // env
-            SpawnFlags.SEARCH_PATH,
+            SpawnFlags.DEFAULT,  // no SEARCH_PATH needed, we use full path
             null,           // child setup
             out std_out,
             out std_err,
             out exit_status
         );
+        if (exit_status != 0 && std_err != null && std_err != "")
+            stderr.printf ("reg.exe stderr: %s\n", std_err);
         return (exit_status == 0);
     } catch (Error e) {
         stderr.printf ("reg command failed: %s\n", e.message);
@@ -104,9 +120,9 @@ public static bool is_vulkan_layer_registered () {
         string std_err;
         Process.spawn_sync (
             null,
-            { "reg", "query", "HKLM\\SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers" },
+            { get_reg_exe (), "query", "HKLM\\SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers" },
             null,
-            SpawnFlags.SEARCH_PATH,
+            SpawnFlags.DEFAULT,
             null,
             out std_out,
             out std_err,
