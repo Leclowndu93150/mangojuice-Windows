@@ -94,6 +94,7 @@ public class GameManager : Box {
         set_margin_bottom (12);
         setup_ui ();
         refresh_processes ();
+        sync_overlay_state ();
     }
 
     private string get_exe_directory () {
@@ -318,6 +319,44 @@ public class GameManager : Box {
 
     /* ---- Start / Stop ---- */
 
+    private bool is_mangohud_running () {
+        try {
+            string tasklist = Path.build_filename (
+                Environment.get_variable ("SystemRoot") ?? "C:\\Windows",
+                "System32", "tasklist.exe"
+            );
+            int exit_status;
+            string std_out;
+            string std_err;
+            Process.spawn_sync (null,
+                { tasklist, "/FI", "IMAGENAME eq MangoHud.exe", "/NH", "/FO", "CSV" },
+                null, (SpawnFlags) 0, null,
+                out std_out, out std_err, out exit_status);
+            return std_out.contains ("MangoHud.exe");
+        } catch (Error e) {
+            return false;
+        }
+    }
+
+    public void sync_overlay_state () {
+        if (is_mangohud_running ()) {
+            start_btn.sensitive = false;
+            stop_btn.sensitive = true;
+            status_label.label = current_target != null
+                ? _("Overlay running on: %s").printf (current_target)
+                : _("Overlay running.");
+            status_label.remove_css_class ("dim-label");
+            status_label.add_css_class ("success");
+        } else {
+            start_btn.sensitive = true;
+            stop_btn.sensitive = false;
+            status_label.label = _("No overlay running.");
+            status_label.remove_css_class ("success");
+            status_label.add_css_class ("dim-label");
+            current_target = null;
+        }
+    }
+
     private void on_start () {
         string? proc = get_selected_process ();
         if (proc == null) {
@@ -331,39 +370,77 @@ public class GameManager : Box {
             return;
         }
 
-        // Save config before starting so the overlay picks up current settings
-        // (MangoJuice saves to MangoHud.conf, MangoHud.exe reads it on startup)
-
+        // Launch MangoHud.exe as admin via ShellExecuteEx (triggers UAC prompt)
+        // We use a helper .vbs script because GLib can't call ShellExecuteEx directly
         try {
-            Process.spawn_command_line_async (mangohud_exe + " " + proc);
+            string vbs_path = Path.build_filename (
+                Environment.get_variable ("TEMP") ?? "C:\\Windows\\Temp",
+                "mangohud_launch.vbs"
+            );
+
+            string vbs_content = "Set objShell = CreateObject(\"Shell.Application\")\n" +
+                "objShell.ShellExecute \"%s\", \"%s\", \"\", \"runas\", 1\n".printf (
+                    mangohud_exe.replace ("\\", "\\\\"),
+                    proc
+                );
+
+            FileUtils.set_contents (vbs_path, vbs_content);
+
+            string wscript = Path.build_filename (
+                Environment.get_variable ("SystemRoot") ?? "C:\\Windows",
+                "System32", "wscript.exe"
+            );
+            Process.spawn_command_line_async (wscript + " \"" + vbs_path + "\"");
+
             current_target = proc;
-            start_btn.sensitive = false;
-            stop_btn.sensitive = true;
-            status_label.label = _("Overlay running on: %s").printf (proc);
+
+            // Wait a moment then check if it started
+            Timeout.add (2000, () => {
+                sync_overlay_state ();
+                return false;
+            });
+
+            status_label.label = _("Starting overlay (accept UAC prompt)...");
             status_label.remove_css_class ("dim-label");
-            status_label.add_css_class ("success");
+            start_btn.sensitive = false;
         } catch (Error e) {
             show_error_dialog (_("Failed to start overlay"), e.message);
         }
     }
 
     private void on_stop () {
+        // Kill MangoHud.exe - also needs elevation since MangoHud runs as admin
         try {
+            string vbs_path = Path.build_filename (
+                Environment.get_variable ("TEMP") ?? "C:\\Windows\\Temp",
+                "mangohud_stop.vbs"
+            );
+
             string taskkill = Path.build_filename (
                 Environment.get_variable ("SystemRoot") ?? "C:\\Windows",
                 "System32", "taskkill.exe"
             );
-            Process.spawn_command_line_async (taskkill + " /IM MangoHud.exe /F");
+
+            string vbs_content = "Set objShell = CreateObject(\"Shell.Application\")\n" +
+                "objShell.ShellExecute \"%s\", \"/IM MangoHud.exe /F\", \"\", \"runas\", 0\n".printf (
+                    taskkill.replace ("\\", "\\\\")
+                );
+
+            FileUtils.set_contents (vbs_path, vbs_content);
+
+            string wscript = Path.build_filename (
+                Environment.get_variable ("SystemRoot") ?? "C:\\Windows",
+                "System32", "wscript.exe"
+            );
+            Process.spawn_command_line_async (wscript + " \"" + vbs_path + "\"");
+
+            Timeout.add (1000, () => {
+                sync_overlay_state ();
+                return false;
+            });
         } catch (Error e) {
             stderr.printf ("Failed to stop overlay: %s\n", e.message);
         }
-
-        current_target = null;
-        start_btn.sensitive = true;
-        stop_btn.sensitive = false;
-        status_label.label = _("No overlay running.");
-        status_label.remove_css_class ("success");
-        status_label.add_css_class ("dim-label");
     }
 
     /* ---- Error dialog ---- */
