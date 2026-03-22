@@ -427,6 +427,7 @@ public class MangoJuice : Adw.Application {
         other_scrolled_window = create_scrolled_window (other_box);
 
         string? current_desktop = Environment.get_variable ("XDG_CURRENT_DESKTOP");
+        // On Windows, XDG_CURRENT_DESKTOP is not set; use generic icons.
         bool is_gnome = (current_desktop != null && current_desktop.contains ("GNOME"));
 
         add_view_to_stack (metrics_scrolled_window, "metrics_box", _("Metrics"),
@@ -437,6 +438,12 @@ public class MangoJuice : Adw.Application {
                           is_gnome ? "emblem-system-symbolic" : "io.github.radiolamp.mangojuice-performance-symbolic");
         add_view_to_stack (visual_scrolled_window, "visual_box", _("Visual"),
                           is_gnome ? "preferences-desktop-appearance-symbolic" : "io.github.radiolamp.mangojuice-visual-symbolic");
+
+        // Windows Game Manager -- deploy/remove proxy dxgi.dll per game
+        var game_manager = new GameManager ();
+        var game_manager_scrolled = create_scrolled_window (game_manager);
+        add_view_to_stack (game_manager_scrolled, "games_box", _("Games"),
+                          "applications-games-symbolic");
 
         add_other_box_if_needed.begin ();
 
@@ -540,7 +547,8 @@ public class MangoJuice : Adw.Application {
             glxgears_available = is_glxgears_available ();
         }
 
-        var config_dir = File.new_for_path (Environment.get_home_dir ()).get_child (".config");
+        string appdata = Environment.get_variable ("APPDATA") ?? Environment.get_home_dir ();
+        var config_dir = File.new_for_path (Path.build_filename (appdata, "MangoHud"));
         var first_run_file = config_dir.get_child(FIRST_RUN_FILE);
         first_run = !first_run_file.query_exists();
                 
@@ -766,12 +774,13 @@ public class MangoJuice : Adw.Application {
         // Сохраняем все ожидающие изменения цветов перед закрытием
         SaveStates.flush_all_pending ();
         
-        try {
-            Process.spawn_command_line_sync ("pkill vkcube");
-            Process.spawn_command_line_sync ("pkill glxgears");
-        } catch (Error e) {
-            stderr.printf (_("Error closing test apps: %s\n"), e.message);
-        }
+        // On Windows, vkcube/glxgears test tools are not used.
+        // try {
+        //     Process.spawn_command_line_sync ("pkill vkcube");
+        //     Process.spawn_command_line_sync ("pkill glxgears");
+        // } catch (Error e) {
+        //     stderr.printf (_("Error closing test apps: %s\n"), e.message);
+        // }
 
         base.shutdown ();
     }
@@ -1048,11 +1057,12 @@ public class MangoJuice : Adw.Application {
     
         blacklist_row.append(blacklist_box);
     
-        if (!is_flatpak()) {
-            mangohud_global_button = new Button.with_label(_("MangoHud Global"));
-            mangohud_global_button.clicked.connect(on_mangohud_global_button_clicked);
-            blacklist_row.append(mangohud_global_button);
-        }
+        // MangoHud Global (/etc/environment) is Linux-only; disabled on Windows.
+        // if (!is_flatpak()) {
+        //     mangohud_global_button = new Button.with_label(_("MangoHud Global"));
+        //     mangohud_global_button.clicked.connect(on_mangohud_global_button_clicked);
+        //     blacklist_row.append(mangohud_global_button);
+        // }
     
         extras_box.append(blacklist_row);
     
@@ -1081,9 +1091,10 @@ public class MangoJuice : Adw.Application {
         custom_command_flow_box.insert (pair2, -1);
     
         var pair3 = new Box (Orientation.HORIZONTAL, 5);
-        if (!is_flatpak ()) {
-            pair3.append (intel_power_fix_button);
-        }
+        // Intel Power Fix is Linux-only; hidden on Windows.
+        // if (!is_flatpak ()) {
+        //     pair3.append (intel_power_fix_button);
+        // }
         pair3.append (reset_button);
         custom_command_flow_box.insert (pair3, -1);
     
@@ -2298,25 +2309,11 @@ public class MangoJuice : Adw.Application {
     }
 
     void restart_vkcube () {
-        try {
-            Process.spawn_command_line_sync ("pkill vkcube");
-            if (is_flatpak()) {
-                Process.spawn_command_line_async ("mangohud vkcube-wayland");
-            } else {
-                Process.spawn_command_line_async ("mangohud vkcube --wsi xcb");
-            }
-        } catch (Error e) {
-            stderr.printf (_("Error when restarting vkcube: %s\n"), e.message);
-        }
+        // vkcube is not available on Windows.
     }
 
     void restart_glxgears () {
-        try {
-            Process.spawn_command_line_sync ("pkill glxgears");
-            Process.spawn_command_line_async ("mangohud glxgears");
-        } catch (Error e) {
-            stderr.printf (_("Error when restarting glxgears: %s\n"), e.message);
-        }
+        // glxgears is not available on Windows.
     }
 
     void restart_vkcube_or_glxgears () {
@@ -2333,61 +2330,25 @@ public class MangoJuice : Adw.Application {
     }
 
     bool is_vkcube_running () {
-        try {
-            string[] argv = { "pgrep", "vkcube" };
-            int exit_status;
-            string standard_output;
-            string standard_error;
-            Process.spawn_sync (null, argv, null, SpawnFlags.SEARCH_PATH, null, out standard_output, out standard_error, out exit_status);
-
-            return exit_status == 0;
-        } catch (Error e) {
-            stderr.printf (_("Error checking running processes: %s\n"), e.message);
-            return false;
-        }
+        // Not applicable on Windows.
+        return false;
     }
 
     bool is_glxgears_running () {
-        try {
-            string[] argv = { "pgrep", "glxgears" };
-            int exit_status;
-            string standard_output;
-            string standard_error;
-            Process.spawn_sync (null, argv, null, SpawnFlags.SEARCH_PATH, null, out standard_output, out standard_error, out exit_status);
-
-            return exit_status == 0;
-        } catch (Error e) {
-            stderr.printf (_("Error checking running processes: %s\n"), e.message);
-            return false;
-        }
+        // Not applicable on Windows.
+        return false;
     }
 
     public void run_test () {
+        // On Windows, there are no vkcube/glxgears test tools.
+        // Just ensure the config file exists.
         new Thread<void>("run-test", () => {
             try {
-                var config_dir = File.new_for_path (Environment.get_home_dir ()).get_child (".config").get_child ("MangoHud");
-                var config_file = config_dir.get_child ("MangoHud.conf");
-
-                string? wayland_display = Environment.get_variable("WAYLAND_DISPLAY");
-                bool is_wayland = (wayland_display != null && wayland_display != "");
+                string _appdata_t = Environment.get_variable ("APPDATA") ?? Environment.get_home_dir ();
+                var config_file = File.new_for_path (Path.build_filename (_appdata_t, "MangoHud", "MangoHud.conf"));
 
                 if (!config_file.query_exists ()) {
                     save_config ();
-                }
-
-                if (is_flatpak ()) {
-                    Process.spawn_command_line_sync ("pkill vkcube");
-                    if (is_wayland) {
-                        Process.spawn_command_line_async ("mangohud vkcube-wayland");
-                    } else {
-                        Process.spawn_command_line_async ("mangohud vkcube");
-                    }
-                } else if (is_vkcube_available ()) {
-                    Process.spawn_command_line_sync ("pkill vkcube");
-                    Process.spawn_command_line_async ("mangohud vkcube --wsi xcb");
-                } else if (is_glxgears_available ()) {
-                    Process.spawn_command_line_sync ("pkill glxgears");
-                    Process.spawn_command_line_async ("mangohud glxgears");
                 }
 
                 Idle.add (() => {
@@ -2401,7 +2362,8 @@ public class MangoJuice : Adw.Application {
     }
 
     void delete_vkbasalt_conf () {
-        var config_dir = File.new_for_path (Environment.get_home_dir ()).get_child (".config").get_child ("vkBasalt");
+        string _appdata_vk = Environment.get_variable ("APPDATA") ?? Environment.get_home_dir ();
+        var config_dir = File.new_for_path (Path.build_filename (_appdata_vk, "vkBasalt"));
         var file = config_dir.get_child ("vkBasalt.conf");
         if (file.query_exists ()) {
             try {
@@ -2416,10 +2378,8 @@ public class MangoJuice : Adw.Application {
     }
 
     void delete_mangohud_backup () {
-        var file = File.new_for_path (Environment.get_home_dir ())
-                      .get_child (".config")
-                      .get_child ("MangoHud")
-                      .get_child (".MangoHud.backup");
+        string _appdata_bk = Environment.get_variable ("APPDATA") ?? Environment.get_home_dir ();
+        var file = File.new_for_path (Path.build_filename (_appdata_bk, "MangoHud", ".MangoHud.backup"));
 
         if (file.query_exists ()) {
             try {
@@ -2605,48 +2565,19 @@ public class MangoJuice : Adw.Application {
     }
 
     public bool is_vkcube_available () {
-        try {
-            string[] argv = { "which", "vkcube" };
-            int exit_status;
-            string standard_output;
-            string standard_error;
-            Process.spawn_sync (null, argv, null, SpawnFlags.SEARCH_PATH, null, out standard_output, out standard_error, out exit_status);
-            return exit_status == 0;
-        } catch (Error e) {
-            stderr.printf (_("Error checking vkcube availability: %s\n"), e.message);
-            return false;
-        }
+        // vkcube is a Linux Vulkan test tool; not available on Windows.
+        return false;
     }
 
     bool is_mangohud_available () {
-        try {
-            string[] argv = { "which", "mangohud" };
-            int exit_status;
-            string standard_output;
-            string standard_error;
-            Process.spawn_sync (null, argv, null, SpawnFlags.SEARCH_PATH, null, out standard_output, out standard_error, out exit_status);
-            if (exit_status != 0) {
-                stderr.printf (_("MangoHud not found. Please install MangoHud to use this application.\n"));
-            }
-            return exit_status == 0;
-        } catch (Error e) {
-            stderr.printf (_("Error checking MangoHud availability: %s\n"), e.message);
-            return false;
-        }
+        // On Windows, MangoHud is deployed as a proxy dxgi.dll per-game.
+        // The config editor always works, so return true.
+        return true;
     }
 
     public bool is_glxgears_available () {
-        try {
-            string[] argv = { "which", "glxgears" };
-            int exit_status;
-            string standard_output;
-            string standard_error;
-            Process.spawn_sync (null, argv, null, SpawnFlags.SEARCH_PATH, null, out standard_output, out standard_error, out exit_status);
-            return exit_status == 0;
-        } catch (Error e) {
-            stderr.printf (_("Error checking glxgears availability: %s\n"), e.message);
-            return false;
-        }
+        // glxgears is a Linux OpenGL test tool; not available on Windows.
+        return false;
     }
 
     void on_save_as_button_clicked () {
@@ -2665,8 +2596,8 @@ public class MangoJuice : Adw.Application {
     }
 
     void save_config_to_file (string file_path) {
-        var config_dir = File.new_for_path (Environment.get_home_dir ()).get_child (".config").get_child ("MangoHud");
-        var file = config_dir.get_child ("MangoHud.conf");
+        string _appdata_sc = Environment.get_variable ("APPDATA") ?? Environment.get_home_dir ();
+        var file = File.new_for_path (Path.build_filename (_appdata_sc, "MangoHud", "MangoHud.conf"));
         if (!file.query_exists ()) {
             stderr.printf (_("MangoHud.conf does not exist.\n"));
             return;
@@ -2703,8 +2634,8 @@ public class MangoJuice : Adw.Application {
     }
 
     public void restore_config_from_file (string file_path) {
-        var config_dir = File.new_for_path (Environment.get_home_dir ()).get_child (".config").get_child ("MangoHud");
-        var file = config_dir.get_child ("MangoHud.conf");
+        string _appdata_rc = Environment.get_variable ("APPDATA") ?? Environment.get_home_dir ();
+        var file = File.new_for_path (Path.build_filename (_appdata_rc, "MangoHud", "MangoHud.conf"));
 
         try {
             var input_stream = new DataInputStream (File.new_for_path (file_path).read ());
@@ -2882,42 +2813,8 @@ public class MangoJuice : Adw.Application {
     }
 
     void on_mangohud_global_button_clicked () {
-        bool success = false;
-
-        if (mangohud_global_enabled) {
-            try {
-                Process.spawn_command_line_sync ("pkexec sed -i '/MANGOHUD=1/d' /etc/environment");
-                string file_contents;
-                FileUtils.get_contents ("/etc/environment", out file_contents);
-                if (!file_contents.contains ("MANGOHUD=1")) {
-                    success = true;
-                    mangohud_global_enabled = false;
-                    mangohud_global_button.remove_css_class ("suggested-action");
-                }
-            } catch (Error e) {
-                stderr.printf (_("Error deleting MANGOHUD from /etc/environment: %s\n"), e.message);
-            }
-        } else {
-            try {
-                Process.spawn_command_line_sync ("pkexec sh -c 'echo \"MANGOHUD=1\" >> /etc/environment'");
-                string file_contents;
-                FileUtils.get_contents ("/etc/environment", out file_contents);
-                if (file_contents.contains ("MANGOHUD=1")) {
-                    success = true;
-                    mangohud_global_enabled = true;
-                    mangohud_global_button.add_css_class ("suggested-action");
-                }
-            } catch (Error e) {
-                stderr.printf (_("Error adding MANGOHUD to /etc/environment: %s\n"), e.message);
-            }
-        }
-
-        if (success) {
-            check_mangohud_global_status ();
-            show_restart_warning ();
-        } else {
-            stderr.printf (_("Failed to modify /etc/environment.\n"));
-        }
+        // Linux-only: modifies /etc/environment. No-op on Windows.
+        // On Windows, MangoHud is enabled per-game via the Game Manager.
     }
 
     void save_config () {
@@ -2941,7 +2838,7 @@ public class MangoJuice : Adw.Application {
         dialog.response.connect ((response) => {
             if (response == "restart") {
                 try {
-                    Process.spawn_command_line_sync ("reboot");
+                    // Reboot not needed on Windows for this feature.
                 } catch (Error e) {
                     stderr.printf (_("Error when restarting the system: %s\n"), e.message);
                 }
@@ -2951,29 +2848,8 @@ public class MangoJuice : Adw.Application {
     }
 
     void check_mangohud_global_status () {
-        new Thread<void>("check-mangohud-status", () => {
-            try {
-                string[] argv = { "grep", "MANGOHUD=1", "/etc/environment" };
-                int exit_status;
-                string standard_output;
-                string standard_error;
-                Process.spawn_sync ( null, argv, null, SpawnFlags.SEARCH_PATH, null, out standard_output, out standard_error, out exit_status );
-
-                bool enabled = (exit_status == 0);
-
-                Idle.add(() => {
-                    mangohud_global_enabled = enabled;
-                    if (enabled) {
-                        mangohud_global_button.add_css_class ("suggested-action");
-                    } else {
-                        mangohud_global_button.remove_css_class ("suggested-action");
-                    }
-                    return false;
-                });
-            } catch (Error e) {
-                stderr.printf (_("Error checking the MANGOHUD status: %s\n"), e.message);
-            }
-        });
+        // Linux-only: /etc/environment does not exist on Windows.
+        // No-op on Windows port.
     }
 
     async void add_other_box_if_needed () {
@@ -2983,9 +2859,11 @@ public class MangoJuice : Adw.Application {
     }
 
     async bool check_vkbasalt_installed_async () {
-        string[] paths = { "/usr/lib/libvkbasalt.so", "/usr/lib/x86_64-linux-gnu/libvkbasalt.so", "/usr/local/lib/libvkbasalt.so", "/usr/lib64/vkbasalt/libvkbasalt.so" };
-        foreach (var path in paths) {
-            if (FileUtils.test (path, FileTest.EXISTS)) {
+        // On Windows, check if vkBasalt config directory exists in %APPDATA%
+        string _appdata_vkb = Environment.get_variable ("APPDATA") ?? "";
+        if (_appdata_vkb != "") {
+            string vkbasalt_dir = Path.build_filename (_appdata_vkb, "vkBasalt");
+            if (FileUtils.test (vkbasalt_dir, FileTest.IS_DIR)) {
                 return true;
             }
         }
@@ -3031,11 +2909,8 @@ public class MangoJuice : Adw.Application {
     }
 
     bool check_appstream_available() {
-        if (!FileUtils.test("/usr/bin/xdg-open", FileTest.EXISTS)) {
-            return false;
-        }
-        var appinfo = AppInfo.get_default_for_uri_scheme("appstream");
-        return appinfo != null;
+        // AppStream/xdg-open is Linux-only; not available on Windows.
+        return false;
     }
 
     public string rgba_to_hex (Gdk.RGBA rgba) {

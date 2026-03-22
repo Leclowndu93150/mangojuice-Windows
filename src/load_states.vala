@@ -5,8 +5,9 @@ using Gee;
 
 public class LoadStates {
     public static async void load_states_from_file (MangoJuice mango_juice) {
-        var config_dir = File.new_for_path (Environment.get_home_dir ()).get_child (".config").get_child ("MangoHud");
-        var file = config_dir.get_child ("MangoHud.conf");
+        string appdata = Environment.get_variable ("APPDATA") ?? Environment.get_home_dir ();
+        var config_dir = File.new_for_path (Path.build_filename (appdata, "MangoHud"));
+        var file = File.new_for_path (Path.build_filename (appdata, "MangoHud", "MangoHud.conf"));
 
         mango_juice.is_loading = true;
 

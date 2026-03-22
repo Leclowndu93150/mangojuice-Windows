@@ -8,8 +8,8 @@ public class SaveStates {
     
     static File get_config_file() {
         if (config_file_cache == null) {
-            var config_dir = File.new_for_path (Environment.get_home_dir ()).get_child (".config").get_child ("MangoHud");
-            config_file_cache = config_dir.get_child ("MangoHud.conf");
+            string appdata = Environment.get_variable ("APPDATA") ?? Environment.get_home_dir ();
+            config_file_cache = File.new_for_path (Path.build_filename (appdata, "MangoHud", "MangoHud.conf"));
         }
         return config_file_cache;
     }
@@ -358,7 +358,8 @@ public class SaveStates {
     }
 
     public static void save_states_to_file (MangoJuice mango_juice) {
-        var config_dir = File.new_for_path (Environment.get_home_dir ()).get_child (".config").get_child ("MangoHud");
+        string appdata = Environment.get_variable ("APPDATA") ?? Environment.get_home_dir ();
+        var config_dir = File.new_for_path (Path.build_filename (appdata, "MangoHud"));
         var file = get_config_file();
         bool is_horizontal = mango_juice.custom_switch.active;
 

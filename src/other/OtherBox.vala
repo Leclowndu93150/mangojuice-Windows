@@ -117,6 +117,8 @@ public class OtherBox : Box {
         buttons_flow_box.set_min_children_per_line (1);
         
         vkbasalt_global_button = new Button.with_label (_("Global vkBasalt"));
+        vkbasalt_global_button.sensitive = false;
+        vkbasalt_global_button.set_tooltip_text ("Not available on Windows");
         buttons_flow_box.append (vkbasalt_global_button);
         
         hotkey_recorder = new ShortcutRecorder() {
@@ -435,13 +437,7 @@ public class OtherBox : Box {
     }
 
     void restart_vkcube() {
-        try {
-            Process.spawn_command_line_sync("pkill vkcube");
-            Thread.usleep(1000);
-            Process.spawn_command_line_async("bash -c 'ENABLE_VKBASALT=1 mangohud vkcube --wsi xcb'");
-        } catch (Error e) {
-            stderr.printf("Ошибка при перезапуске vkcube: %s\n", e.message);
-        }
+        // vkcube is not available on Windows.
     }
 
     public bool is_reshade_switch_active (string shader_name) {
@@ -679,62 +675,12 @@ public class OtherBox : Box {
     }
 
     void on_vkbasalt_global_button_clicked () {
-        bool success = false;
-
-        if (vkbasalt_global_enabled) {
-            try {
-                Process.spawn_command_line_sync ("pkexec sed -i '/ENABLE_VKBASALT=1/d' /etc/environment");
-                string file_contents;
-                FileUtils.get_contents ("/etc/environment", out file_contents);
-                if (!file_contents.contains ("ENABLE_VKBASALT=1")) {
-                    success = true;
-                    vkbasalt_global_enabled = false;
-                    vkbasalt_global_button.remove_css_class ("suggested-action");
-                }
-            } catch (Error e) {
-                stderr.printf ("Error deleting ENABLE_VKBASALT from /etc/environment: %s\n", e.message);
-            }
-        } else {
-            try {
-                Process.spawn_command_line_sync ("pkexec sh -c 'echo \"ENABLE_VKBASALT=1\" >> /etc/environment'");
-                string file_contents;
-                FileUtils.get_contents ("/etc/environment", out file_contents);
-                if (file_contents.contains ("ENABLE_VKBASALT=1")) {
-                    success = true;
-                    vkbasalt_global_enabled = true;
-                    vkbasalt_global_button.add_css_class ("suggested-action");
-                }
-            } catch (Error e) {
-                stderr.printf ("Error adding ENABLE_VKBASALT to /etc/environment: %s\n", e.message);
-            }
-        }
-
-        if (success) {
-            check_vkbasalt_global_status ();
-            show_restart_warning ();
-        } else {
-            stderr.printf ("Failed to modify /etc/environment.\n");
-        }
+        // Linux-only: modifies /etc/environment. No-op on Windows.
     }
 
     void check_vkbasalt_global_status () {
-        try {
-            string[] argv = { "grep", "ENABLE_VKBASALT=1", "/etc/environment" };
-            int exit_status;
-            string standard_output;
-            string standard_error;
-            Process.spawn_sync (null, argv, null, SpawnFlags.SEARCH_PATH, null, out standard_output, out standard_error, out exit_status);
-
-            if (exit_status == 0) {
-                vkbasalt_global_enabled = true;
-                vkbasalt_global_button.add_css_class ("suggested-action");
-            } else {
-                vkbasalt_global_enabled = false;
-                vkbasalt_global_button.remove_css_class ("suggested-action");
-            }
-        } catch (Error e) {
-            stderr.printf ("Error checking the ENABLE_VKBASALT status: %s\n", e.message);
-        }
+        // Linux-only: checks /etc/environment. No-op on Windows.
+        vkbasalt_global_enabled = false;
     }
 
     void show_restart_warning () {
@@ -749,7 +695,7 @@ public class OtherBox : Box {
         dialog.response.connect ((response) => {
             if (response == "restart") {
                 try {
-                    Process.spawn_command_line_sync ("reboot");
+                    // Reboot not needed on Windows for this feature.
                 } catch (Error e) {
                     stderr.printf ("Error when restarting the system: %s\n", e.message);
                 }

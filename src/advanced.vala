@@ -74,8 +74,9 @@ public class AdvancedDialog : Adw.Dialog {
         list_box.set_margin_bottom (12);
         list_box.add_css_class ("boxed-list");
     
-        var config_dir = File.new_for_path (Environment.get_home_dir ()).get_child (".config").get_child ("MangoHud");
-        config_file = config_dir.get_child ("MangoHud.conf");
+        string _appdata = Environment.get_variable ("APPDATA") ?? Environment.get_home_dir ();
+        var config_dir = File.new_for_path (Path.build_filename (_appdata, "MangoHud"));
+        config_file = File.new_for_path (Path.build_filename (_appdata, "MangoHud", "MangoHud.conf"));
     
         if (config_file.query_exists ()) {
             try {

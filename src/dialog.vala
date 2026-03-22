@@ -334,9 +334,7 @@ namespace AboutDialog {
         });
     
         try {
-            var config_dir = File.new_for_path(Environment.get_home_dir())
-                .get_child(".config")
-                .get_child("MangoHud");
+            var config_dir = File.new_for_path(Path.build_filename(Environment.get_variable("APPDATA") ?? Environment.get_home_dir(), "MangoHud"));
     
             if (config_dir.query_exists()) {
                 var enumerator = config_dir.enumerate_children(FileAttribute.STANDARD_NAME, 0);
@@ -390,12 +388,7 @@ namespace AboutDialog {
         });
     
         dialog.closed.connect(() => {
-            try {
-                Process.spawn_command_line_async("pkill vkcube");
-                Process.spawn_command_line_async("pkill glxgears");
-            } catch (Error e) {
-                stderr.printf(_("Error when executing the command: %s\n"), e.message);
-            }
+            // vkcube/glxgears not available on Windows; no cleanup needed.
         });
     
         dialog.present(parent_window);
@@ -405,8 +398,7 @@ namespace AboutDialog {
         try {
             string profile_filename = profile_name.replace(" ", "-") + ".conf";
             string active_config_path = Path.build_filename(
-                Environment.get_home_dir(),
-                ".config",
+                Environment.get_variable("APPDATA") ?? Environment.get_home_dir(),
                 "MangoHud",
                 "MangoHud.conf"
             );
@@ -562,9 +554,7 @@ namespace AboutDialog {
         
         reset_btn.clicked.connect(() => {
             try {
-                var config_dir = File.new_for_path(Environment.get_home_dir())
-                    .get_child(".config")
-                    .get_child("MangoHud");
+                var config_dir = File.new_for_path(Path.build_filename(Environment.get_variable("APPDATA") ?? Environment.get_home_dir(), "MangoHud"));
         
                 var original_config = config_dir.get_child("MangoHud.conf");
                 var profile_config = config_dir.get_child(
@@ -646,36 +636,9 @@ namespace AboutDialog {
             row.add_css_class("selected");
             currently_selected_row = row;
             
-            try {
-                Process.spawn_command_line_async("pkill vkcube");
-                Process.spawn_command_line_async("pkill glxgears");
-                SaveStates.reset_config_file_cache();
-                string config_path = Path.build_filename(
-                    Environment.get_home_dir(),
-                    ".config",
-                    "MangoHud",
-                    profile_name.replace(" ", "-") + ".conf"
-                );
-        
-                string base_cmd = @"env MANGOHUD_CONFIGFILE='$config_path' mangohud";
-        
-                if (app.is_flatpak ()) {
-                    Process.spawn_command_line_sync ("pkill vkcube");
-                    if (is_wayland) {
-                        Process.spawn_command_line_async (base_cmd + " mangohud vkcube-wayland");
-                    } else {
-                        Process.spawn_command_line_async (base_cmd + " mangohud vkcube --wsi xcb");
-                    }
-                } else if (app.is_vkcube_available ()) {
-                    Process.spawn_command_line_sync ("pkill vkcube");
-                    Process.spawn_command_line_async (base_cmd + " mangohud vkcube --wsi xcb");
-                } else if (app.is_glxgears_available ()) {
-                    Process.spawn_command_line_sync ("pkill glxgears");
-                    Process.spawn_command_line_async (base_cmd + " mangohud glxgears");
-                }
-            } catch (Error e) {
-                warning("%s", e.message);
-            }
+            // On Windows, vkcube/glxgears preview is not available.
+            // Profile selection is recorded but no live preview is launched.
+            SaveStates.reset_config_file_cache();
         });
         
         var click_controller = new Gtk.GestureClick();
@@ -733,9 +696,7 @@ namespace AboutDialog {
         ((Gtk.Label)restore_button.get_child()).set_ellipsize(Pango.EllipsizeMode.END);
         restore_button.clicked.connect(() => {
             try {
-                var backup_file = File.new_for_path(Environment.get_home_dir())
-                    .get_child(".config")
-                    .get_child("MangoHud")
+                var backup_file = File.new_for_path(Path.build_filename(Environment.get_variable("APPDATA") ?? Environment.get_home_dir(), "MangoHud"))
                     .get_child(".MangoHud.backup");
                 app.restore_config_from_file(backup_file.get_path());
                 backup_file.delete();
@@ -864,8 +825,7 @@ namespace AboutDialog {
 
         while (true) {
             string config_path = Path.build_filename(
-                Environment.get_home_dir(),
-                ".config",
+                Environment.get_variable("APPDATA") ?? Environment.get_home_dir(),
                 "MangoHud",
                 name.replace(" ", "-") + ".conf"
             );
@@ -883,9 +843,7 @@ namespace AboutDialog {
 
     void create_profile_config(string profile_name) {
         try {
-            var config_dir = File.new_for_path(Environment.get_home_dir())
-                .get_child(".config")
-                .get_child("MangoHud");
+            var config_dir = File.new_for_path(Path.build_filename(Environment.get_variable("APPDATA") ?? Environment.get_home_dir(), "MangoHud"));
 
             var original_config = config_dir.get_child("MangoHud.conf");
             var new_config = config_dir.get_child(
@@ -902,14 +860,12 @@ namespace AboutDialog {
     void rename_profile_config(string old_name, string new_name) {
         try {
             string old_path = Path.build_filename(
-                Environment.get_home_dir(),
-                ".config",
+                Environment.get_variable("APPDATA") ?? Environment.get_home_dir(),
                 "MangoHud",
                 old_name.replace(" ", "-") + ".conf"
             );
             string new_path = Path.build_filename(
-                Environment.get_home_dir(),
-                ".config",
+                Environment.get_variable("APPDATA") ?? Environment.get_home_dir(),
                 "MangoHud",
                 new_name.replace(" ", "-") + ".conf"
             );
@@ -926,8 +882,7 @@ namespace AboutDialog {
     void delete_profile_config(string profile_name) {
         try {
             string path = Path.build_filename(
-                Environment.get_home_dir(),
-                ".config",
+                Environment.get_variable("APPDATA") ?? Environment.get_home_dir(),
                 "MangoHud",
                 profile_name.replace(" ", "-") + ".conf"
             );
@@ -944,15 +899,13 @@ namespace AboutDialog {
 void apply_profile_config(string profile_name) {
     try {
         string profile_path = Path.build_filename(
-            Environment.get_home_dir(),
-            ".config",
+            Environment.get_variable("APPDATA") ?? Environment.get_home_dir(),
             "MangoHud",
             profile_name.replace(" ", "-") + ".conf"
         );
 
         string target_path = Path.build_filename(
-            Environment.get_home_dir(),
-            ".config",
+            Environment.get_variable("APPDATA") ?? Environment.get_home_dir(),
             "MangoHud",
             "MangoHud.conf"
         );
@@ -999,8 +952,9 @@ void add_profile_comment_to_file(string file_path, string profile_name) {
 }
 
     void set_preset (string[] preset_values) {
-        var file = File.new_for_path (Environment.get_home_dir ()).get_child (".config").get_child("MangoHud").get_child ("MangoHud.conf");
-        var backup_file = File.new_for_path (Environment.get_home_dir ()).get_child (".config").get_child ("MangoHud").get_child (".MangoHud.backup");
+        string _appdata_sp = Environment.get_variable ("APPDATA") ?? Environment.get_home_dir ();
+        var file = File.new_for_path (Path.build_filename (_appdata_sp, "MangoHud", "MangoHud.conf"));
+        var backup_file = File.new_for_path (Path.build_filename (_appdata_sp, "MangoHud", ".MangoHud.backup"));
         try {
             if (file.query_exists () && !backup_file.query_exists ()) {
                 file.copy (backup_file, FileCopyFlags.OVERWRITE);

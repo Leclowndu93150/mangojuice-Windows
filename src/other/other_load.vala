@@ -29,10 +29,9 @@ public class OtherLoad {
 
     public static LoadResult load_states (OtherBox other_box) {
         var result = new LoadResult();
-        var config_dir = File.new_for_path (Environment.get_home_dir ())
-                             .get_child (".config")
-                             .get_child ("vkBasalt");
-        var config_file = config_dir.get_child ("vkBasalt.conf");
+        string appdata = Environment.get_variable ("APPDATA") ?? Environment.get_home_dir ();
+        var config_dir = File.new_for_path (Path.build_filename (appdata, "vkBasalt"));
+        var config_file = File.new_for_path (Path.build_filename (appdata, "vkBasalt", "vkBasalt.conf"));
 
         if (!config_dir.query_exists () || !config_file.query_exists ()) {
             create_default_config (config_dir, config_file);

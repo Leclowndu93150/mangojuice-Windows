@@ -15,7 +15,8 @@ sources = files(
     'load_states.vala',
     'reset_manager.vala',
     'intel_power_fix_handler.vala',
-    'advanced.vala'
+    'advanced.vala',
+    'game_manager.vala'
 )
 
 configure_file(output: 'config.h', configuration: conf)

@@ -5,10 +5,9 @@ using Gee;
 public class OtherSave {
 
     public static void save_states (OtherBox other_box) {
-        var config_dir = File.new_for_path (Environment.get_home_dir ())
-                             .get_child (".config")
-                             .get_child ("vkBasalt");
-        var config_file = config_dir.get_child ("vkBasalt.conf");
+        string appdata = Environment.get_variable ("APPDATA") ?? Environment.get_home_dir ();
+        var config_dir = File.new_for_path (Path.build_filename (appdata, "vkBasalt"));
+        var config_file = File.new_for_path (Path.build_filename (appdata, "vkBasalt", "vkBasalt.conf"));
 
         if (!config_dir.query_exists ()) {
             try {
