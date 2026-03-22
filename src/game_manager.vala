@@ -195,13 +195,75 @@ public class GameManager : Box {
     /* ------------------------------------------------------------------ */
 
     private void setup_ui () {
-        // Title
-        var header = new Label (_("Game Manager"));
-        header.add_css_class ("title-2");
+        // --- Windowed overlay (default mode) ---
+        var overlay_header = new Label (_("Overlay"));
+        overlay_header.add_css_class ("title-2");
+        overlay_header.set_halign (Align.START);
+        append (overlay_header);
+
+        var overlay_desc = new Label (_("Run the MangoHud overlay on top of any windowed or borderless game. No setup needed."));
+        overlay_desc.add_css_class ("dim-label");
+        overlay_desc.set_halign (Align.START);
+        overlay_desc.set_wrap (true);
+        append (overlay_desc);
+
+        var overlay_btn_box = new Box (Orientation.HORIZONTAL, 8);
+        overlay_btn_box.set_margin_top (6);
+        overlay_btn_box.set_margin_bottom (12);
+
+        var start_btn = new Button.with_label (_("Start Overlay"));
+        start_btn.add_css_class ("suggested-action");
+        start_btn.add_css_class ("pill");
+
+        var stop_btn = new Button.with_label (_("Stop Overlay"));
+        stop_btn.add_css_class ("destructive-action");
+        stop_btn.sensitive = false;
+
+        start_btn.clicked.connect (() => {
+            string mangohud_exe = Path.build_filename (get_exe_directory (), "MangoHud.exe");
+            if (!FileUtils.test (mangohud_exe, FileTest.EXISTS)) {
+                show_error_dialog (_("MangoHud.exe not found"), _("Expected at: %s").printf (mangohud_exe));
+                return;
+            }
+            try {
+                Process.spawn_command_line_async (mangohud_exe);
+                start_btn.sensitive = false;
+                stop_btn.sensitive = true;
+            } catch (Error e) {
+                show_error_dialog (_("Failed to start overlay"), e.message);
+            }
+        });
+
+        stop_btn.clicked.connect (() => {
+            // Kill MangoHud.exe overlay process
+            try {
+                string taskkill = Path.build_filename (
+                    Environment.get_variable ("SystemRoot") ?? "C:\\Windows",
+                    "System32", "taskkill.exe"
+                );
+                Process.spawn_command_line_async (taskkill + " /IM MangoHud.exe /F");
+                start_btn.sensitive = true;
+                stop_btn.sensitive = false;
+            } catch (Error e) {
+                stderr.printf ("Failed to stop overlay: %s\n", e.message);
+            }
+        });
+
+        overlay_btn_box.append (start_btn);
+        overlay_btn_box.append (stop_btn);
+        append (overlay_btn_box);
+
+        // --- Fullscreen mode (WIP) ---
+        var fs_separator = new Separator (Orientation.HORIZONTAL);
+        append (fs_separator);
+
+        var header = new Label (_("Fullscreen Mode (Advanced)"));
+        header.add_css_class ("title-4");
         header.set_halign (Align.START);
+        header.set_margin_top (8);
         append (header);
 
-        var subtitle = new Label (_("Deploy or remove the MangoHud proxy DLL (dxgi.dll) for each game."));
+        var subtitle = new Label (_("For exclusive fullscreen games: deploy the proxy DLL next to the game executable, or register the Vulkan layer."));
         subtitle.add_css_class ("dim-label");
         subtitle.set_halign (Align.START);
         subtitle.set_wrap (true);
