@@ -10,7 +10,9 @@
   </h1>
 
 
-### This program will be a convenient alternative to GOverlay for setting up MangoHud
+### A convenient GUI for setting up MangoHud (Windows port)
+
+> **This is the Windows fork.** It includes a Game Manager tab for deploying the DXGI proxy DLL to DirectX games and registering the Vulkan implicit layer for Vulkan games. MangoJuice requests administrator privileges on startup because registering the Vulkan layer requires writing to `HKLM\SOFTWARE\Khronos\Vulkan\ImplicitLayers` in the Windows Registry.
 
 <p align="center">
     <img src="https://github.com/radiolamp/mangojuice-donate/blob/main/images/screen1.png?raw=true" alt="Screenshot"/>
