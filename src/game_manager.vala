@@ -33,7 +33,7 @@ private static bool run_reg (string[] args) {
             null,           // working dir
             real_args,
             null,           // env
-            SpawnFlags.DEFAULT,  // no SEARCH_PATH needed, we use full path
+            (SpawnFlags) 0,  // no SEARCH_PATH needed, we use full path
             null,           // child setup
             out std_out,
             out std_err,
@@ -122,7 +122,7 @@ public static bool is_vulkan_layer_registered () {
             null,
             { get_reg_exe (), "query", "HKLM\\SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers" },
             null,
-            SpawnFlags.DEFAULT,
+            (SpawnFlags) 0,
             null,
             out std_out,
             out std_err,
