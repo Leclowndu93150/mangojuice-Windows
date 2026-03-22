@@ -20,14 +20,25 @@ sources = files(
 )
 
 configure_file(output: 'config.h', configuration: conf)
-#config_h_dir = include_directories('.')
+
+# Windows admin manifest (UAC elevation)
+extra_link_args = []
+extra_objects = []
+if host_machine.system() == 'windows'
+    windows_mod = import('windows')
+    extra_objects += windows_mod.compile_resources(
+        files('../data/mangojuice_win.rc'),
+        include_directories: include_directories('../data')
+    )
+endif
 
 executable(
     'mangojuice',
-    
+
     resources,
     vapi_sources,
     sources,
+    extra_objects,
     vala_args: ['--vapidir', meson.current_source_dir()],
     dependencies: deps,
     install: true

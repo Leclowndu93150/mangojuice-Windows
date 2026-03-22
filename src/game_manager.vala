@@ -7,49 +7,91 @@ using Adw;
 using Gee;
 
 /**
- * Register the MangoHud Vulkan implicit layer in the Windows Registry.
- * This writes to HKLM so the application needs admin privileges.
- * After registration, all Vulkan games get the overlay when MANGOHUD=1 is set.
+ * Run a reg.exe command using proper argv (avoids GLib quote-parsing issues).
+ * Returns true on success.
  */
-public static void register_vulkan_layer () {
+private static bool run_reg (string[] args) {
+    try {
+        int exit_status;
+        string std_out;
+        string std_err;
+        Process.spawn_sync (
+            null,           // working dir
+            args,
+            null,           // env
+            SpawnFlags.SEARCH_PATH,
+            null,           // child setup
+            out std_out,
+            out std_err,
+            out exit_status
+        );
+        return (exit_status == 0);
+    } catch (Error e) {
+        stderr.printf ("reg command failed: %s\n", e.message);
+        return false;
+    }
+}
+
+/**
+ * Find the MangoHud Vulkan layer JSON file.
+ */
+private static string? find_layer_json () {
     string exe_dir = Environment.get_current_dir ();
     string? appdir = Environment.get_variable ("APPDIR");
     if (appdir != null && appdir != "")
         exe_dir = appdir;
 
     string json_path = Path.build_filename (exe_dir, "MangoHud.x86_64.json");
+    if (FileUtils.test (json_path, FileTest.EXISTS))
+        return json_path;
 
-    // Also check for the JSON without arch suffix
-    if (!FileUtils.test (json_path, FileTest.EXISTS)) {
-        json_path = Path.build_filename (exe_dir, "MangoHud.json");
+    json_path = Path.build_filename (exe_dir, "MangoHud.json");
+    if (FileUtils.test (json_path, FileTest.EXISTS))
+        return json_path;
+
+    return null;
+}
+
+/**
+ * Register the MangoHud Vulkan implicit layer in the Windows Registry.
+ * This writes to HKLM so the application needs admin privileges.
+ */
+public static bool register_vulkan_layer () {
+    string? json_path = find_layer_json ();
+    if (json_path == null) {
+        stderr.printf ("Vulkan layer JSON not found\n");
+        return false;
     }
 
-    if (!FileUtils.test (json_path, FileTest.EXISTS)) {
-        stderr.printf ("Vulkan layer JSON not found at: %s\n", json_path);
-        return;
+    string reg_path = json_path.replace ("/", "\\");
+
+    // reg add HKLM\SOFTWARE\Khronos\Vulkan\ImplicitLayers /v <path> /t REG_DWORD /d 0 /f
+    bool ok = run_reg ({
+        "reg", "add",
+        "HKLM\\SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers",
+        "/v", reg_path,
+        "/t", "REG_DWORD",
+        "/d", "0",
+        "/f"
+    });
+
+    if (!ok) {
+        stderr.printf ("Failed to register Vulkan layer. Run as administrator.\n");
+        return false;
     }
 
-    // Use reg.exe to write the registry key. This avoids needing Windows-specific
-    // Vala bindings. The key is:
-    //   HKLM\SOFTWARE\Khronos\Vulkan\ImplicitLayers
-    //   <path_to_json> = REG_DWORD 0
-    try {
-        // Normalize path separators for the registry
-        string reg_path = json_path.replace ("/", "\\");
+    // Set MANGOHUD=1 system-wide
+    run_reg ({
+        "reg", "add",
+        "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+        "/v", "MANGOHUD",
+        "/t", "REG_SZ",
+        "/d", "1",
+        "/f"
+    });
 
-        string cmd = "reg add \"HKLM\\SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers\" /v \"%s\" /t REG_DWORD /d 0 /f".printf (reg_path);
-        Process.spawn_command_line_sync (cmd);
-
-        // Also set MANGOHUD=1 system-wide so Vulkan games see it
-        string env_cmd = "reg add \"HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment\" /v MANGOHUD /t REG_SZ /d 1 /f";
-        Process.spawn_command_line_sync (env_cmd);
-
-        stdout.printf ("Vulkan layer registered: %s\n", reg_path);
-        stdout.printf ("MANGOHUD=1 set system-wide.\n");
-    } catch (Error e) {
-        stderr.printf ("Failed to register Vulkan layer: %s\n", e.message);
-        stderr.printf ("Make sure MangoJuice is running as administrator.\n");
-    }
+    stdout.printf ("Vulkan layer registered: %s\n", reg_path);
+    return true;
 }
 
 /**
@@ -57,12 +99,20 @@ public static void register_vulkan_layer () {
  */
 public static bool is_vulkan_layer_registered () {
     try {
-        string output;
-        Process.spawn_command_line_sync (
-            "reg query \"HKLM\\SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers\"",
-            out output
+        int exit_status;
+        string std_out;
+        string std_err;
+        Process.spawn_sync (
+            null,
+            { "reg", "query", "HKLM\\SOFTWARE\\Khronos\\Vulkan\\ImplicitLayers" },
+            null,
+            SpawnFlags.SEARCH_PATH,
+            null,
+            out std_out,
+            out std_err,
+            out exit_status
         );
-        return output.contains ("MangoHud");
+        return (exit_status == 0 && std_out.contains ("MangoHud"));
     } catch (Error e) {
         return false;
     }
@@ -226,18 +276,34 @@ public class GameManager : Box {
 
         vk_btn.set_margin_top (4);
         vk_btn.clicked.connect (() => {
-            register_vulkan_layer ();
-            if (is_vulkan_layer_registered ()) {
-                vk_status_label.label = _("Status: Registered");
-                vk_status_label.remove_css_class ("warning");
-                vk_status_label.add_css_class ("success");
-                vk_btn.label = _("Re-register Vulkan Layer");
-            } else {
-                show_error_dialog (
-                    _("Registration failed"),
-                    _("Could not write to the registry. Make sure MangoJuice is running as administrator.")
-                );
-            }
+            vk_btn.sensitive = false;
+            vk_status_label.label = _("Registering...");
+
+            // Run in a thread to avoid freezing the UI
+            new Thread<void> ("vk-register", () => {
+                bool ok = register_vulkan_layer ();
+                bool registered = is_vulkan_layer_registered ();
+
+                // Update UI back on the main thread
+                Idle.add (() => {
+                    vk_btn.sensitive = true;
+                    if (ok && registered) {
+                        vk_status_label.label = _("Status: Registered");
+                        vk_status_label.remove_css_class ("warning");
+                        vk_status_label.add_css_class ("success");
+                        vk_btn.label = _("Re-register Vulkan Layer");
+                    } else {
+                        vk_status_label.label = _("Status: Failed");
+                        vk_status_label.remove_css_class ("success");
+                        vk_status_label.add_css_class ("error");
+                        show_error_dialog (
+                            _("Registration failed"),
+                            _("Could not write to the registry. Make sure MangoJuice is running as administrator.")
+                        );
+                    }
+                    return false; // remove idle handler
+                });
+            });
         });
 
         append (vk_status_label);
